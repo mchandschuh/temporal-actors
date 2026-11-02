@@ -1,0 +1,66 @@
+#!/usr/bin/env node
+
+'use strict';
+
+const { spawnSync } = require('node:child_process');
+const path = require('node:path');
+
+const repositoryRoot = __dirname;
+
+const samples = {
+  go: {
+    summation: {
+      command: 'go',
+      args: ['run', './samples/summation/cmd'],
+      cwd: path.join(repositoryRoot, 'go'),
+    },
+  },
+};
+
+function usage() {
+  console.error('Usage: ./init run_sample <language> <sample_name>');
+  console.error('   or: ./init <language> <sample_name>');
+  console.error('');
+  console.error('Available samples:');
+  for (const [language, languageSamples] of Object.entries(samples)) {
+    for (const sampleName of Object.keys(languageSamples)) {
+      console.error(`  ${language} ${sampleName}`);
+    }
+  }
+}
+
+function runSample(language, sampleName) {
+  const sample = samples[language]?.[sampleName];
+  if (!sample) {
+    console.error(`Unknown sample: ${language} ${sampleName}`);
+    usage();
+    process.exitCode = 2;
+    return;
+  }
+
+  const result = spawnSync(sample.command, sample.args, {
+    cwd: sample.cwd,
+    env: process.env,
+    stdio: 'inherit',
+  });
+
+  if (result.error) {
+    console.error(`Unable to run ${language} ${sampleName}: ${result.error.message}`);
+    process.exitCode = 1;
+    return;
+  }
+
+  process.exitCode = result.status ?? 1;
+}
+
+const commandLine = process.argv.slice(2);
+if (commandLine[0] === 'run_sample') {
+  commandLine.shift();
+}
+
+if (commandLine.length !== 2) {
+  usage();
+  process.exitCode = 2;
+} else {
+  runSample(commandLine[0], commandLine[1]);
+}
