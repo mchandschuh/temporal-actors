@@ -300,6 +300,17 @@ func (d Definition[S]) NewIdentity(id string) (ActorIdentity, error) {
 	return identity, identity.Validate()
 }
 
+// ValidateIdentity verifies that identity belongs to this definition.
+func (d Definition[S]) ValidateIdentity(identity ActorIdentity) error {
+	if err := identity.Validate(); err != nil {
+		return err
+	}
+	if identity.Type != d.typeName {
+		return fmt.Errorf("actor identity type %q does not match definition type %q", identity.Type, d.typeName)
+	}
+	return nil
+}
+
 // RouteResolver returns a resolver using this definition's captured routing
 // configuration.
 func (d Definition[S]) RouteResolver() RouteResolver {

@@ -63,7 +63,7 @@ func RunDefinition[S any](
 	identity ActorIdentity,
 	initialState S,
 ) (S, error) {
-	if err := identity.Validate(); err != nil {
+	if err := definition.ValidateIdentity(identity); err != nil {
 		return initialState, err
 	}
 	actorContext := newContext(identity)

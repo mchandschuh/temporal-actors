@@ -14,6 +14,11 @@ const samples = {
       args: ['run', './samples/summation/cmd'],
       cwd: path.join(repositoryRoot, 'go'),
     },
+    list: {
+      command: 'go',
+      args: ['run', './samples/list/cmd'],
+      cwd: path.join(repositoryRoot, 'go'),
+    },
   },
 };
 
