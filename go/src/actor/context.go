@@ -9,14 +9,12 @@ package actor
 type Context struct {
 	identity   ActorIdentity
 	workflowID string
-	taskQueue  string
 }
 
 func newContext(identity ActorIdentity) Context {
 	return Context{
 		identity:   identity,
 		workflowID: identity.WorkflowID(),
-		taskQueue:  identity.TaskQueue(),
 	}
 }
 
@@ -29,10 +27,4 @@ func (c Context) Identity() ActorIdentity {
 // the actor identity.
 func (c Context) WorkflowID() string {
 	return c.workflowID
-}
-
-// TaskQueue returns the per-actor Temporal Task Queue conventionally
-// associated with the actor identity.
-func (c Context) TaskQueue() string {
-	return c.taskQueue
 }

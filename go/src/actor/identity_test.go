@@ -9,18 +9,11 @@ func TestActorIdentityNamesAreStableAndUnambiguous(t *testing.T) {
 	identity := ActorIdentity{Type: "billing/account", ID: "customer/42"}
 
 	workflowID := identity.WorkflowID()
-	taskQueue := identity.TaskQueue()
-	if workflowID == taskQueue {
-		t.Fatal("workflow ID and task queue must be distinct")
-	}
 	if !strings.HasPrefix(workflowID, "temporal-actors/v1/workflow/") {
 		t.Fatalf("unexpected workflow ID %q", workflowID)
 	}
-	if !strings.HasPrefix(taskQueue, "temporal-actors/v1/queue/") {
-		t.Fatalf("unexpected task queue %q", taskQueue)
-	}
-	if strings.Contains(workflowID, "/billing/account/") || strings.Contains(taskQueue, "/customer/42") {
-		t.Fatalf("identity components must be encoded: workflow=%q queue=%q", workflowID, taskQueue)
+	if strings.Contains(workflowID, "/billing/account/") {
+		t.Fatalf("identity components must be encoded: workflow=%q", workflowID)
 	}
 
 	if (ActorIdentity{Type: "a/b", ID: "c"}).WorkflowID() == (ActorIdentity{Type: "a", ID: "b/c"}).WorkflowID() {
@@ -55,7 +48,14 @@ func TestWorkflowOptionsUseIdentityNames(t *testing.T) {
 	if options.ID != identity.WorkflowID() {
 		t.Fatalf("got workflow ID %q, want %q", options.ID, identity.WorkflowID())
 	}
-	if options.TaskQueue != identity.TaskQueue() {
-		t.Fatalf("got task queue %q, want %q", options.TaskQueue, identity.TaskQueue())
+	route, err := DefaultRouteResolver().Resolve(identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if options.TaskQueue != route.TaskQueue {
+		t.Fatalf("got task queue %q, want %q", options.TaskQueue, route.TaskQueue)
+	}
+	if options.Priority.FairnessKey != route.FairnessKey {
+		t.Fatalf("got fairness key %q, want %q", options.Priority.FairnessKey, route.FairnessKey)
 	}
 }

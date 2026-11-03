@@ -15,6 +15,7 @@
 // serialized mailbox. Commands return the next state. Requests return a result
 // and leave the state unchanged. A request is therefore different from a
 // Temporal Query: a sequenced request observes messages that precede it in the
+// mailbox.
 //
 // The common mailbox Update adapter is intentionally synchronous. Actor
 // handlers must not yield the Temporal workflow scheduler, block on wall-clock
@@ -22,7 +23,6 @@
 // channels, or start goroutines. Temporal permits more capable Update
 // handlers, but those capabilities are outside this actor contract because
 // they would weaken the one-message-at-a-time invariant.
-// mailbox.
 //
 // Handler lookup is based on the runtime Go message type. Exact types take
 // precedence over assignable interfaces, and more-specific interfaces take
@@ -34,4 +34,10 @@
 // convention. That convention is a durable compatibility boundary for live
 // Temporal executions; changing it requires a new convention and a migration
 // strategy rather than an incidental refactor.
+//
+// Task Queue and fairness-key construction is delegated to RouteResolver. The
+// default resolver shares one mailbox Task Queue per actor type and derives a
+// distinct fairness key per actor identity. Temporal's fairness scheduling is
+// best effort and applies to task dispatch; Workflow History ordering and the
+// synchronous mailbox handler remain the actor correctness boundary.
 package actor

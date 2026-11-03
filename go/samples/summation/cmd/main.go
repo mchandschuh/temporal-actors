@@ -39,7 +39,8 @@ func run() error {
 	defer temporalClient.Close()
 
 	identity := actor.ActorIdentity{Type: "summation", ID: "sample-account"}
-	workflowOptions, err := actor.WorkflowOptions(identity)
+	routeResolver := actor.DefaultRouteResolver()
+	workflowOptions, err := actor.WorkflowOptionsWithResolver(identity, routeResolver)
 	if err != nil {
 		return fmt.Errorf("build actor workflow options: %w", err)
 	}
@@ -51,7 +52,7 @@ func run() error {
 	}
 	defer worker.Stop()
 
-	workflowRun, err := actor.StartWorkflow(ctx, temporalClient, identity, summation.Workflow, 0)
+	workflowRun, err := actor.StartWorkflowWithResolver(ctx, temporalClient, identity, routeResolver, summation.Workflow, 0)
 	if err != nil {
 		return fmt.Errorf("start summation workflow: %w", err)
 	}

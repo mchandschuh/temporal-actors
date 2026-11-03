@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
 )
 
@@ -12,16 +13,37 @@ import (
 // return its current state. It is separate from a handler's message Signal.
 const StopSignalName = stopSignalName
 
-// WorkflowOptions returns the Temporal start options for an actor identity.
-// The identity determines both the durable Workflow ID and the per-actor Task
-// Queue.
+// WorkflowOptions returns Temporal start options using the default route
+// resolver.
 func WorkflowOptions(identity ActorIdentity) (client.StartWorkflowOptions, error) {
+	return WorkflowOptionsWithResolver(identity, DefaultRouteResolver())
+}
+
+// WorkflowOptionsWithResolver returns Temporal start options using resolver.
+// The actor identity determines the Workflow ID; the resolver determines the
+// Task Queue and fairness metadata.
+func WorkflowOptionsWithResolver(identity ActorIdentity, resolver RouteResolver) (client.StartWorkflowOptions, error) {
 	if err := identity.Validate(); err != nil {
+		return client.StartWorkflowOptions{}, err
+	}
+	if resolver == nil {
+		return client.StartWorkflowOptions{}, errors.New("actor route resolver must not be nil")
+	}
+	route, err := resolver.Resolve(identity)
+	if err != nil {
+		return client.StartWorkflowOptions{}, err
+	}
+	if err := route.Validate(); err != nil {
 		return client.StartWorkflowOptions{}, err
 	}
 	return client.StartWorkflowOptions{
 		ID:        identity.WorkflowID(),
-		TaskQueue: identity.TaskQueue(),
+		TaskQueue: route.TaskQueue,
+		Priority: temporal.Priority{
+			PriorityKey:    route.PriorityKey,
+			FairnessKey:    route.FairnessKey,
+			FairnessWeight: route.FairnessWeight,
+		},
 	}, nil
 }
 
@@ -35,7 +57,20 @@ func StartWorkflow[S any](
 	workflowFn any,
 	initialState S,
 ) (client.WorkflowRun, error) {
-	options, err := WorkflowOptions(identity)
+	return StartWorkflowWithResolver(ctx, c, identity, DefaultRouteResolver(), workflowFn, initialState)
+}
+
+// StartWorkflowWithResolver starts an actor workflow using resolver for its
+// Task Queue and fairness metadata.
+func StartWorkflowWithResolver[S any](
+	ctx context.Context,
+	c client.Client,
+	identity ActorIdentity,
+	resolver RouteResolver,
+	workflowFn any,
+	initialState S,
+) (client.WorkflowRun, error) {
+	options, err := WorkflowOptionsWithResolver(identity, resolver)
 	if err != nil {
 		return nil, err
 	}

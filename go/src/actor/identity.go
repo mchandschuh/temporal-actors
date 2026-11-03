@@ -14,8 +14,9 @@ const (
 // ActorIdentity is the stable logical identity of an actor.
 //
 // Type identifies the actor implementation and ID identifies one instance of
-// that type. Both values are encoded when they are used in Temporal names so
-// that arbitrary strings cannot create ambiguous names.
+// that type. Both values are encoded when they are used in the durable
+// Workflow ID so arbitrary strings cannot create ambiguous names. Task Queue
+// and fairness-key naming is delegated to a RouteResolver.
 type ActorIdentity struct {
 	Type string
 	ID   string
@@ -32,20 +33,12 @@ func (i ActorIdentity) Validate() error {
 	if workflowID := i.WorkflowID(); len(workflowID) > maxTemporalNameBytes {
 		return fmt.Errorf("actor workflow ID is %d bytes, maximum is %d", len(workflowID), maxTemporalNameBytes)
 	}
-	if taskQueue := i.TaskQueue(); len(taskQueue) > maxTemporalNameBytes {
-		return fmt.Errorf("actor task queue is %d bytes, maximum is %d", len(taskQueue), maxTemporalNameBytes)
-	}
 	return nil
 }
 
 // WorkflowID returns the conventional Temporal Workflow ID for this actor.
 func (i ActorIdentity) WorkflowID() string {
 	return i.temporalName("workflow")
-}
-
-// TaskQueue returns the conventional per-actor Temporal Task Queue name.
-func (i ActorIdentity) TaskQueue() string {
-	return i.temporalName("queue")
 }
 
 func (i ActorIdentity) temporalName(kind string) string {
