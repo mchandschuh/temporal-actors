@@ -1,6 +1,7 @@
 package actor
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
@@ -43,6 +44,15 @@ var (
 	ErrDuplicateMessageType = errors.New("actor message type is registered more than once")
 	// ErrInvalidHandlerSpec reports a zero or otherwise malformed handler spec.
 	ErrInvalidHandlerSpec = errors.New("invalid actor handler specification")
+	// ErrDuplicateMessageTypeID reports multiple registrations for one mailbox
+	// message type identifier.
+	ErrDuplicateMessageTypeID = errors.New("actor mailbox message type ID is registered more than once")
+	// ErrUnknownMessageTypeID reports a mailbox message with no decoder in the
+	// definition.
+	ErrUnknownMessageTypeID = errors.New("unknown actor mailbox message type ID")
+	// ErrNoMailboxDecoder reports a handler that can dispatch in-process but has
+	// no concrete message decoder for mailbox transport.
+	ErrNoMailboxDecoder = errors.New("actor handler has no mailbox decoder")
 )
 
 // HandlerSpec is an immutable, typed registration entry for a Definition.
@@ -50,6 +60,8 @@ var (
 type HandlerSpec[S any] struct {
 	kind        HandlerKind
 	messageType reflect.Type
+	typeID      string
+	decode      func([]byte) (any, error)
 	invoke      func(Context, S, any) (DispatchResult[S], error)
 }
 
@@ -62,12 +74,27 @@ type HandlerSpec[S any] struct {
 // treat the state argument as immutable, even when S contains references.
 func Command[S, M any](fn func(Context, S, M) S) HandlerSpec[S] {
 	messageType := reflect.TypeOf((*M)(nil)).Elem()
+	return commandWithTypeID(defaultMessageTypeID(messageType), fn)
+}
+
+// CommandWithTypeID registers a command with an explicit mailbox message type
+// identifier. The identifier is a transport/schema discriminator used to
+// decode the payload; handler selection still occurs by the decoded Go type.
+// Use an explicit, versioned identifier when the message crosses a durable
+// mailbox boundary.
+func CommandWithTypeID[S, M any](typeID string, fn func(Context, S, M) S) HandlerSpec[S] {
+	return commandWithTypeID(typeID, fn)
+}
+
+func commandWithTypeID[S, M any](typeID string, fn func(Context, S, M) S) HandlerSpec[S] {
+	messageType := reflect.TypeOf((*M)(nil)).Elem()
 	if fn == nil {
 		return HandlerSpec[S]{}
 	}
-	return HandlerSpec[S]{
+	spec := HandlerSpec[S]{
 		kind:        CommandHandler,
 		messageType: messageType,
+		typeID:      typeID,
 		invoke: func(ctx Context, state S, message any) (DispatchResult[S], error) {
 			typedMessage, ok := message.(M)
 			if !ok {
@@ -79,6 +106,10 @@ func Command[S, M any](fn func(Context, S, M) S) HandlerSpec[S] {
 			}, nil
 		},
 	}
+	if messageType.Kind() != reflect.Interface {
+		spec.decode = jsonDecoder[M]
+	}
+	return spec
 }
 
 // Request registers a sequenced read handler with the shape:
@@ -90,12 +121,26 @@ func Command[S, M any](fn func(Context, S, M) S) HandlerSpec[S] {
 // unchanged. The result is returned through DispatchResult.Result.
 func Request[S, M, R any](fn func(Context, S, M) (R, error)) HandlerSpec[S] {
 	messageType := reflect.TypeOf((*M)(nil)).Elem()
+	return requestWithTypeID(defaultMessageTypeID(messageType), fn)
+}
+
+// RequestWithTypeID registers a sequenced request with an explicit mailbox
+// message type identifier. The identifier is a transport/schema discriminator
+// used only to decode the payload before Definition.Dispatch selects the
+// handler by Go message type.
+func RequestWithTypeID[S, M, R any](typeID string, fn func(Context, S, M) (R, error)) HandlerSpec[S] {
+	return requestWithTypeID(typeID, fn)
+}
+
+func requestWithTypeID[S, M, R any](typeID string, fn func(Context, S, M) (R, error)) HandlerSpec[S] {
+	messageType := reflect.TypeOf((*M)(nil)).Elem()
 	if fn == nil {
 		return HandlerSpec[S]{}
 	}
-	return HandlerSpec[S]{
+	spec := HandlerSpec[S]{
 		kind:        RequestHandler,
 		messageType: messageType,
+		typeID:      typeID,
 		invoke: func(ctx Context, state S, message any) (DispatchResult[S], error) {
 			typedMessage, ok := message.(M)
 			if !ok {
@@ -112,6 +157,22 @@ func Request[S, M, R any](fn func(Context, S, M) (R, error)) HandlerSpec[S] {
 			}, nil
 		},
 	}
+	if messageType.Kind() != reflect.Interface {
+		spec.decode = jsonDecoder[M]
+	}
+	return spec
+}
+
+func jsonDecoder[M any](payload []byte) (any, error) {
+	var message M
+	if err := json.Unmarshal(payload, &message); err != nil {
+		return nil, err
+	}
+	return message, nil
+}
+
+func defaultMessageTypeID(messageType reflect.Type) string {
+	return "go:" + messageType.PkgPath() + ":" + messageType.String()
 }
 
 // DispatchResult is the result of one Definition dispatch. For a command,
@@ -141,6 +202,7 @@ type DispatchResult[S any] struct {
 // but decoded messages are still dispatched by their Go type in this registry.
 type Definition[S any] struct {
 	handlers []registeredHandler[S]
+	byTypeID map[string]registeredHandler[S]
 }
 
 type registeredHandler[S any] struct {
@@ -153,8 +215,9 @@ type registeredHandler[S any] struct {
 func NewDefinition[S any](specs ...HandlerSpec[S]) (Definition[S], error) {
 	handlers := make([]registeredHandler[S], 0, len(specs))
 	seen := make(map[reflect.Type]struct{}, len(specs))
+	seenTypeIDs := make(map[string]struct{}, len(specs))
 	for index, spec := range specs {
-		if spec.invoke == nil || spec.messageType == nil {
+		if spec.invoke == nil || spec.messageType == nil || spec.typeID == "" {
 			return Definition[S]{}, fmt.Errorf("handler %d: %w", index, ErrInvalidHandlerSpec)
 		}
 		if spec.messageType.Kind() == reflect.Interface && spec.messageType.NumMethod() == 0 {
@@ -163,10 +226,18 @@ func NewDefinition[S any](specs ...HandlerSpec[S]) (Definition[S], error) {
 		if _, exists := seen[spec.messageType]; exists {
 			return Definition[S]{}, fmt.Errorf("message type %s: %w", spec.messageType, ErrDuplicateMessageType)
 		}
+		if _, exists := seenTypeIDs[spec.typeID]; exists {
+			return Definition[S]{}, fmt.Errorf("message type ID %q: %w", spec.typeID, ErrDuplicateMessageTypeID)
+		}
 		seen[spec.messageType] = struct{}{}
+		seenTypeIDs[spec.typeID] = struct{}{}
 		handlers = append(handlers, registeredHandler[S]{HandlerSpec: spec})
 	}
-	return Definition[S]{handlers: handlers}, nil
+	byTypeID := make(map[string]registeredHandler[S], len(handlers))
+	for _, handler := range handlers {
+		byTypeID[handler.typeID] = handler
+	}
+	return Definition[S]{handlers: handlers, byTypeID: byTypeID}, nil
 }
 
 // Dispatch selects and invokes the most specific handler for message. A
@@ -183,6 +254,42 @@ func (d Definition[S]) Dispatch(ctx Context, state S, message any) (DispatchResu
 		return DispatchResult[S]{State: state}, err
 	}
 	return handler.invoke(ctx, state, message)
+}
+
+// EncodeMessage creates a mailbox request for a concrete message. The type ID
+// is used only to select the decoder when the request reaches the workflow;
+// the workflow still dispatches the decoded value by its Go type.
+func (d Definition[S]) EncodeMessage(message any) (MailboxRequest, error) {
+	messageType := reflect.TypeOf(message)
+	if messageType == nil {
+		return MailboxRequest{}, fmt.Errorf("%w: <nil>", ErrNoHandler)
+	}
+	handler, err := d.selectHandler(messageType)
+	if err != nil {
+		return MailboxRequest{}, err
+	}
+	if handler.decode == nil {
+		return MailboxRequest{}, fmt.Errorf("message type %s: %w", messageType, ErrNoMailboxDecoder)
+	}
+	payload, err := json.Marshal(message)
+	if err != nil {
+		return MailboxRequest{}, fmt.Errorf("encode message type %s: %w", messageType, err)
+	}
+	return MailboxRequest{TypeID: handler.typeID, Payload: payload}, nil
+}
+
+// DecodeMessage decodes a mailbox request into the concrete Go message type
+// registered for its transport/schema type ID. The returned value is intended
+// to be passed to Dispatch; the type ID is not used for handler selection.
+func (d Definition[S]) DecodeMessage(request MailboxRequest) (any, error) {
+	handler, ok := d.byTypeID[request.TypeID]
+	if !ok {
+		return nil, fmt.Errorf("%q: %w", request.TypeID, ErrUnknownMessageTypeID)
+	}
+	if handler.decode == nil {
+		return nil, fmt.Errorf("%q: %w", request.TypeID, ErrNoMailboxDecoder)
+	}
+	return handler.decode(request.Payload)
 }
 
 func (d Definition[S]) selectHandler(messageType reflect.Type) (registeredHandler[S], error) {

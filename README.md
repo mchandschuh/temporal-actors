@@ -39,3 +39,5 @@ Handler selection is based on the Go message type, not on a handler name. Exact 
 Definitions are immutable after construction. Handler functions must be deterministic, replay-safe, and free of mutable closure or receiver-owned actor state. The explicit state argument and returned state are the only supported actor-state transition.
 
 The runtime does not use handler names as its primary lookup key. If a future serialized mailbox needs a discriminator to decode a message, that discriminator is a wire-format concern; dispatch still uses the decoded Go message type. The `temporal-actors/v1` prefix in actor Workflow IDs and Task Queue names is versioned because those names are durable Temporal compatibility boundaries.
+
+The common mailbox Update adapter is synchronous by contract. Actor handlers must not yield the Temporal scheduler, block on wall-clock or external operations, start Activities or child Workflows, use workflow channels, or start goroutines. Temporal supports more capable Update handlers, but those capabilities would violate this actor runtime's one-message-at-a-time invariant.

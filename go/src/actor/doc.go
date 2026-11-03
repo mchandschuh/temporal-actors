@@ -15,6 +15,13 @@
 // serialized mailbox. Commands return the next state. Requests return a result
 // and leave the state unchanged. A request is therefore different from a
 // Temporal Query: a sequenced request observes messages that precede it in the
+//
+// The common mailbox Update adapter is intentionally synchronous. Actor
+// handlers must not yield the Temporal workflow scheduler, block on wall-clock
+// or external operations, start Activities or child Workflows, use workflow
+// channels, or start goroutines. Temporal permits more capable Update
+// handlers, but those capabilities are outside this actor contract because
+// they would weaken the one-message-at-a-time invariant.
 // mailbox.
 //
 // Handler lookup is based on the runtime Go message type. Exact types take
