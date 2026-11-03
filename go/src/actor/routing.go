@@ -6,10 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"strings"
 )
 
 const (
-	typeMailboxPrefix  = "temporal-actors/v1/actors"
+	typeMailboxPrefix  = "temporal-actors/actors"
 	legacyQueuePrefix  = "temporal-actors/v1/queue"
 	fairnessKeyPrefix  = "ta/v1/"
 	maxFairnessKeySize = 64
@@ -71,11 +72,34 @@ type TypeMailboxResolver struct{}
 
 // Resolve returns a shared actor-type mailbox route with equal fairness weight.
 func (TypeMailboxResolver) Resolve(identity ActorIdentity) (Route, error) {
+	return resolveTypeMailbox(identity, currentConfig())
+}
+
+type definitionRouteResolver struct {
+	typeName string
+	config   *resolvedConfig
+}
+
+func (r definitionRouteResolver) Resolve(identity ActorIdentity) (Route, error) {
+	if identity.Type != r.typeName {
+		return Route{}, fmt.Errorf("actor identity type %q does not match definition type %q", identity.Type, r.typeName)
+	}
+	return resolveTypeMailbox(identity, r.config)
+}
+
+func resolveTypeMailbox(identity ActorIdentity, config *resolvedConfig) (Route, error) {
 	if err := identity.Validate(); err != nil {
 		return Route{}, err
 	}
+	encodedType, err := config.typeNameEncoder(identity.Type)
+	if err != nil {
+		return Route{}, err
+	}
+	if encodedType == "" || strings.Contains(encodedType, "/") {
+		return Route{}, errors.New("actor type-name encoder must return a non-empty queue-safe segment")
+	}
 	route := Route{
-		TaskQueue:      typeMailboxQueue(identity.Type),
+		TaskQueue:      fmt.Sprintf("temporal-actors/%s/actors/%s/mailbox", config.routeVersion, encodedType),
 		FairnessKey:    actorFairnessKey(identity),
 		FairnessWeight: 1,
 	}
@@ -103,10 +127,6 @@ func (PerActorResolver) Resolve(identity ActorIdentity) (Route, error) {
 // DefaultRouteResolver returns the shared actor-type mailbox resolver.
 func DefaultRouteResolver() RouteResolver {
 	return TypeMailboxResolver{}
-}
-
-func typeMailboxQueue(actorType string) string {
-	return fmt.Sprintf("%s/%s/mailbox", typeMailboxPrefix, encodeIdentityPart(actorType))
 }
 
 func legacyActorQueue(identity ActorIdentity) string {

@@ -40,4 +40,9 @@
 // distinct fairness key per actor identity. Temporal's fairness scheduling is
 // best effort and applies to task dispatch; Workflow History ordering and the
 // synchronous mailbox handler remain the actor correctness boundary.
+//
+// Process-wide defaults are configured before definitions are created. The
+// common path shares one immutable configuration pointer and stateless encoder
+// across definitions; a definition-specific override creates only its own
+// resolved configuration snapshot.
 package actor

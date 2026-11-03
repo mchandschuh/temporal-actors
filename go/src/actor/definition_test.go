@@ -43,7 +43,7 @@ func TestDefinitionDispatchesCommandsAndRequestsByMessageType(t *testing.T) {
 	type state struct{ Total int }
 	type request struct{}
 
-	definition, err := NewDefinition(
+	definition, err := NewDefinition(DefinitionOptions{TypeName: "definition-test"},
 		Command(func(_ Context, state state, message definitionMessage) state {
 			state.Total += message.Value
 			return state
@@ -74,7 +74,7 @@ func TestDefinitionDispatchesCommandsAndRequestsByMessageType(t *testing.T) {
 }
 
 func TestDefinitionUsesExactTypeBeforeInterface(t *testing.T) {
-	definition, err := NewDefinition(
+	definition, err := NewDefinition(DefinitionOptions{TypeName: "exact-type-test"},
 		Command(func(Context, int, definitionMessageInterface) int { return 1 }),
 		Command(func(Context, int, definitionMessage) int { return 2 }),
 	)
@@ -92,7 +92,7 @@ func TestDefinitionUsesExactTypeBeforeInterface(t *testing.T) {
 }
 
 func TestDefinitionUsesMostSpecificInterface(t *testing.T) {
-	definition, err := NewDefinition(
+	definition, err := NewDefinition(DefinitionOptions{TypeName: "specific-interface-test"},
 		Command(func(Context, int, definitionSpecificInterface) int { return 2 }),
 		Command(func(Context, int, definitionMessageInterface) int { return 1 }),
 	)
@@ -114,7 +114,7 @@ func TestRequestErrorLeavesStateUnchanged(t *testing.T) {
 	type request struct{}
 	expected := errors.New("request failed")
 
-	definition, err := NewDefinition(Request(func(_ Context, state state, _ request) (int, error) {
+	definition, err := NewDefinition(DefinitionOptions{TypeName: "request-error-test"}, Request(func(_ Context, state state, _ request) (int, error) {
 		return state.Total, expected
 	}))
 	if err != nil {
@@ -132,7 +132,7 @@ func TestRequestErrorLeavesStateUnchanged(t *testing.T) {
 }
 
 func TestDefinitionRejectsAmbiguousInterfaces(t *testing.T) {
-	definition, err := NewDefinition(
+	definition, err := NewDefinition(DefinitionOptions{TypeName: "ambiguous-interface-test"},
 		Command(func(Context, int, definitionAmbiguousA) int { return 1 }),
 		Command(func(Context, int, definitionAmbiguousB) int { return 2 }),
 	)
@@ -156,7 +156,7 @@ func TestNewDefinitionRejectsInvalidRegistrations(t *testing.T) {
 		"named empty interface":  {Command(func(Context, int, definitionEmptyInterface) int { return 0 })},
 	} {
 		t.Run(name, func(t *testing.T) {
-			if _, err := NewDefinition(specs...); err == nil {
+			if _, err := NewDefinition(DefinitionOptions{TypeName: "invalid-registration-test"}, specs...); err == nil {
 				t.Fatal("expected definition construction to fail")
 			}
 		})
@@ -164,7 +164,7 @@ func TestNewDefinitionRejectsInvalidRegistrations(t *testing.T) {
 }
 
 func TestDefinitionReturnsNoHandlerForUnknownMessage(t *testing.T) {
-	definition, err := NewDefinition(Command(func(Context, int, definitionMessage) int { return 0 }))
+	definition, err := NewDefinition(DefinitionOptions{TypeName: "unknown-message-test"}, Command(func(Context, int, definitionMessage) int { return 0 }))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -177,7 +177,7 @@ func TestDefinitionReturnsNoHandlerForUnknownMessage(t *testing.T) {
 
 func TestDefinitionDispatchesTypedNilPointer(t *testing.T) {
 	type pointerMessage struct{}
-	definition, err := NewDefinition(Command(func(Context, int, *pointerMessage) int { return 9 }))
+	definition, err := NewDefinition(DefinitionOptions{TypeName: "typed-nil-test"}, Command(func(Context, int, *pointerMessage) int { return 9 }))
 	if err != nil {
 		t.Fatal(err)
 	}

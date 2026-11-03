@@ -65,6 +65,14 @@ type HandlerSpec[S any] struct {
 	invoke      func(Context, S, any) (DispatchResult[S], error)
 }
 
+// DefinitionOptions configures one actor definition. Empty routing fields use
+// the immutable process-wide actor configuration.
+type DefinitionOptions struct {
+	TypeName        string
+	RouteVersion    string
+	TypeNameEncoder TypeNameEncoder
+}
+
 // Command registers a state transition with the shape:
 //
 //	func(Context, S, M) S
@@ -201,6 +209,8 @@ type DispatchResult[S any] struct {
 // mailbox envelope may need a schema/type discriminator to decode a message,
 // but decoded messages are still dispatched by their Go type in this registry.
 type Definition[S any] struct {
+	typeName string
+	config   *resolvedConfig
 	handlers []registeredHandler[S]
 	byTypeID map[string]registeredHandler[S]
 }
@@ -212,7 +222,14 @@ type registeredHandler[S any] struct {
 // NewDefinition constructs an immutable handler registry. Registration order
 // has no effect on dispatch. A concrete or interface message type may be
 // registered only once in a definition.
-func NewDefinition[S any](specs ...HandlerSpec[S]) (Definition[S], error) {
+func NewDefinition[S any](options DefinitionOptions, specs ...HandlerSpec[S]) (Definition[S], error) {
+	if err := validateTypeName(options.TypeName); err != nil {
+		return Definition[S]{}, err
+	}
+	config, err := resolveDefinitionConfig(options)
+	if err != nil {
+		return Definition[S]{}, err
+	}
 	handlers := make([]registeredHandler[S], 0, len(specs))
 	seen := make(map[reflect.Type]struct{}, len(specs))
 	seenTypeIDs := make(map[string]struct{}, len(specs))
@@ -237,7 +254,56 @@ func NewDefinition[S any](specs ...HandlerSpec[S]) (Definition[S], error) {
 	for _, handler := range handlers {
 		byTypeID[handler.typeID] = handler
 	}
-	return Definition[S]{handlers: handlers, byTypeID: byTypeID}, nil
+	return Definition[S]{
+		typeName: options.TypeName,
+		config:   config,
+		handlers: handlers,
+		byTypeID: byTypeID,
+	}, nil
+}
+
+func resolveDefinitionConfig(options DefinitionOptions) (*resolvedConfig, error) {
+	configMu.Lock()
+	defer configMu.Unlock()
+	configFrozen = true
+	if options.RouteVersion == "" && options.TypeNameEncoder == nil {
+		return globalConfig, nil
+	}
+	return resolveConfigLocked(options.RouteVersion, options.TypeNameEncoder)
+}
+
+func resolveConfigLocked(routeVersion string, encoder TypeNameEncoder) (*resolvedConfig, error) {
+	resolved := *globalConfig
+	if routeVersion != "" {
+		resolved.routeVersion = routeVersion
+	}
+	if encoder != nil {
+		resolved.typeNameEncoder = encoder
+	}
+	if resolved.routeVersion == "" {
+		return nil, errors.New("actor route version must not be empty")
+	}
+	if resolved.typeNameEncoder == nil {
+		return nil, errors.New("actor type-name encoder must not be nil")
+	}
+	return &resolved, nil
+}
+
+// TypeName returns the stable actor definition type name.
+func (d Definition[S]) TypeName() string {
+	return d.typeName
+}
+
+// NewIdentity creates an actor identity owned by this definition.
+func (d Definition[S]) NewIdentity(id string) (ActorIdentity, error) {
+	identity := ActorIdentity{Type: d.typeName, ID: id}
+	return identity, identity.Validate()
+}
+
+// RouteResolver returns a resolver using this definition's captured routing
+// configuration.
+func (d Definition[S]) RouteResolver() RouteResolver {
+	return definitionRouteResolver{typeName: d.typeName, config: d.config}
 }
 
 // Dispatch selects and invokes the most specific handler for message. A

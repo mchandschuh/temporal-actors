@@ -38,8 +38,15 @@ func run() error {
 	}
 	defer temporalClient.Close()
 
-	identity := actor.ActorIdentity{Type: "summation", ID: "sample-account"}
-	routeResolver := actor.DefaultRouteResolver()
+	definition, err := summation.NewDefinition()
+	if err != nil {
+		return fmt.Errorf("build summation definition: %w", err)
+	}
+	identity, err := definition.NewIdentity("sample-account")
+	if err != nil {
+		return fmt.Errorf("build summation identity: %w", err)
+	}
+	routeResolver := definition.RouteResolver()
 	workflowOptions, err := actor.WorkflowOptionsWithResolver(identity, routeResolver)
 	if err != nil {
 		return fmt.Errorf("build actor workflow options: %w", err)

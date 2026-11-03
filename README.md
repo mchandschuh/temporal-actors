@@ -47,7 +47,7 @@ The common mailbox Update adapter is synchronous by contract. Actor handlers mus
 Temporal routing is resolved through an `actor.RouteResolver`; actor identity does not construct Task Queue names directly. The default resolver uses one shared mailbox Task Queue per actor type:
 
 ```text
-temporal-actors/v1/actors/<encoded-type>/mailbox
+temporal-actors/v2/actors/<encoded-type>/mailbox
 ```
 
 Each actor instance receives a stable fairness key derived from its complete identity. The resolver applies that key through Temporal workflow priority metadata, so actors share worker capacity while remaining distinct fairness virtual queues. Fairness is best-effort Task dispatch scheduling; actor correctness still comes from per-Workflow History ordering and serialized mailbox execution.
@@ -55,3 +55,5 @@ Each actor instance receives a stable fairness key derived from its complete ide
 For tasks at the same priority, Temporal documents FIFO dispatch within a fairness key. That scheduling behavior is useful for actor fairness, but it is not the actor correctness boundary: the Workflow Execution history and synchronous mailbox transition remain authoritative.
 
 Alternative resolvers can provide per-actor queues, sharded queues, or application-specific routing without changing `ActorIdentity` or actor handler code. Fairness keys are limited to 64 bytes by Temporal, and live route changes require an explicit migration strategy.
+
+Process-wide defaults can be configured before definitions are created. Definitions may override the route version or type-name encoder. The common path shares one immutable configuration pointer and one stateless default encoder; only definitions with overrides receive a separate configuration snapshot.

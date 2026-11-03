@@ -18,7 +18,7 @@ type mailboxGet struct{}
 
 func newMailboxTestDefinition(t *testing.T) Definition[int] {
 	t.Helper()
-	definition, err := NewDefinition(
+	definition, err := NewDefinition(DefinitionOptions{TypeName: "test-mailbox"},
 		CommandWithTypeID("test/add/v1", func(Context, int, mailboxAdd) int {
 			return 0
 		}),
@@ -31,7 +31,7 @@ func newMailboxTestDefinition(t *testing.T) Definition[int] {
 }
 
 func mailboxWorkflow(ctx workflow.Context, initialState int, identity ActorIdentity) (int, error) {
-	definition, err := NewDefinition(
+	definition, err := NewDefinition(DefinitionOptions{TypeName: "test-mailbox"},
 		CommandWithTypeID("test/add/v1", func(_ Context, state int, message mailboxAdd) int {
 			return state + message.Value
 		}),
@@ -108,7 +108,7 @@ func TestRunDefinitionKeepsStateWhenRequestFails(t *testing.T) {
 	environment := suite.NewTestWorkflowEnvironment()
 	identity := ActorIdentity{Type: "test-mailbox", ID: "error"}
 
-	definition, err := NewDefinition(
+	definition, err := NewDefinition(DefinitionOptions{TypeName: "test-mailbox"},
 		RequestWithTypeID("test/fail/v1", func(_ Context, state int, _ struct{}) (int, error) {
 			return state, errors.New("expected request failure")
 		}),
@@ -142,7 +142,7 @@ func TestRunDefinitionKeepsStateWhenRequestFails(t *testing.T) {
 }
 
 func TestMailboxMessageTypeIDOnlySelectsDecoder(t *testing.T) {
-	definition, err := NewDefinition(
+	definition, err := NewDefinition(DefinitionOptions{TypeName: "test-mailbox"},
 		CommandWithTypeID("test/add/v1", func(Context, int, mailboxAdd) int { return 1 }),
 	)
 	require.NoError(t, err)
@@ -159,7 +159,7 @@ func TestMailboxMessageTypeIDOnlySelectsDecoder(t *testing.T) {
 }
 
 func TestMailboxRejectsUnknownTypeID(t *testing.T) {
-	definition, err := NewDefinition(
+	definition, err := NewDefinition(DefinitionOptions{TypeName: "test-mailbox"},
 		CommandWithTypeID("test/add/v1", func(Context, int, mailboxAdd) int { return 1 }),
 	)
 	require.NoError(t, err)
@@ -172,7 +172,7 @@ func TestMailboxRejectsUnknownTypeID(t *testing.T) {
 }
 
 func TestMailboxRejectsDuplicateTypeID(t *testing.T) {
-	_, err := NewDefinition(
+	_, err := NewDefinition(DefinitionOptions{TypeName: "test-mailbox"},
 		CommandWithTypeID("test/shared/v1", func(Context, int, mailboxAdd) int { return 1 }),
 		RequestWithTypeID("test/shared/v1", func(Context, int, mailboxGet) (int, error) { return 1, nil }),
 	)
