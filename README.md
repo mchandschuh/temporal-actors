@@ -15,3 +15,27 @@ The sample runner assumes a local Temporal development server is already running
 ```
 
 The shorthand `./init go summation` is also supported. The Go samples connect to `localhost:7233` in the `default` namespace.
+
+## Actor handler contract
+
+The runtime groups handlers for one actor type into an immutable `actor.Definition[S]`. The definition owns handler registration; each actor instance owns its own explicit state and identity.
+
+Commands use the state transition shape:
+
+```go
+func(actor.Context, S, M) S
+```
+
+Sequenced read requests use:
+
+```go
+func(actor.Context, S, M) (R, error)
+```
+
+Commands and requests are both intended to be processed through the actor's serialized mailbox. A request is not the same as a Temporal Query: it must observe all earlier mailbox messages before producing its result.
+
+Handler selection is based on the Go message type, not on a handler name. Exact types take precedence over matching interfaces; more-specific interfaces take precedence over broader interfaces; ambiguous matches are errors. Marker interfaces are optional domain organization and are not required by the runtime.
+
+Definitions are immutable after construction. Handler functions must be deterministic, replay-safe, and free of mutable closure or receiver-owned actor state. The explicit state argument and returned state are the only supported actor-state transition.
+
+The runtime does not use handler names as its primary lookup key. If a future serialized mailbox needs a discriminator to decode a message, that discriminator is a wire-format concern; dispatch still uses the decoded Go message type. The `temporal-actors/v1` prefix in actor Workflow IDs and Task Queue names is versioned because those names are durable Temporal compatibility boundaries.

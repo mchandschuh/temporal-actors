@@ -19,6 +19,11 @@ func Summation(_ actor.Context, state int, message Add) int {
 	return state + message.Value
 }
 
+// NewDefinition returns the immutable handler registry for a summation actor.
+func NewDefinition() (actor.Definition[int], error) {
+	return actor.NewDefinition(actor.Command(Summation))
+}
+
 // Workflow is the Temporal workflow definition for one summation actor.
 func Workflow(ctx workflow.Context, initialState int, identity actor.ActorIdentity) (int, error) {
 	handler, err := actor.NewHandler(AddSignalName, Summation)

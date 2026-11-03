@@ -18,6 +18,16 @@ func TestSummation(t *testing.T) {
 	_ = identity
 }
 
+func TestDefinitionDispatchesAdd(t *testing.T) {
+	definition, err := NewDefinition()
+	require.NoError(t, err)
+
+	result, err := definition.Dispatch(actor.Context{}, 4, Add{Value: 3})
+	require.NoError(t, err)
+	require.Equal(t, 7, result.State)
+	require.Equal(t, actor.CommandHandler, result.Kind)
+}
+
 func TestWorkflowProcessesMessagesAndReturnsStateOnStop(t *testing.T) {
 	var suite testsuite.WorkflowTestSuite
 	environment := suite.NewTestWorkflowEnvironment()
